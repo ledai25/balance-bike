@@ -204,7 +204,6 @@ void loop() {
   // Tính vận tốc góc
   float angular_velocity = (float)(2 * PI * rpm) / 60;// đơn vị radian/s
   //float angular_velocity_rad_to_deg = angular_velocity * 180 / PI;// đơn vị độ/s
-  //Tuning();
   DKH();         
   angleMPU();      
   if(exe) 
@@ -399,37 +398,5 @@ if(digitalRead(encB) == LOW) {
   demInterrupt++;
   }else{
   demInterrupt--;
-  }
-}
-int Tuning() {
-  if (!JDY_31.available())  return 0;
-  delay(2);
-  char param =
-  JDY_31.read();      
-  if (!JDY_31.available()) return 0;
-  char cmd =
-  JDY_31.read();  
-  JDY_31.flush(); 
-  switch (param) {
-     case 'p':
-      if (cmd == '+')    Kp += 1;
-      if (cmd == '-')    Kp -= 1;
-      //printPIDValues();
-      break;
-    case 'i':
-      if (cmd == '+')    Ki += 0.1;
-      if (cmd == '-')    Ki -= 0.1;
-      //printPIDValues();
-      break;
-    case 'd':
-      if (cmd == '+')    Kd += 0.1;
-      if (cmd == '-')    Kd -= 0.1;
-      //printPIDValues();
-      break;/*    
-    case 's':
-      if (cmd == '+')    sGain += 0.005;
-      if (cmd == '-')    sGain -= 0.005;
-      printPIDValues();
-      break;*/  
   }
 }
