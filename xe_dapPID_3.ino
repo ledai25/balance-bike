@@ -6,11 +6,11 @@
 SoftwareSerial JDY_31 (6, 5); //RX-->D5, TX-->D6 Giao tiếp với module Bluetooth
 
 // PID 
-float Kp = 178.0;//170.0 
+float Kp = 140.0;//170.0 
 float Ki = 680.0;//3.0 680.0
 float Kd = 1.8;//1.7
 float f = 0.2;// 0.2
-float gcb = 0.0050;// 0.0050
+float gcb = 0.0040;
 
 int pid_output = 0;                 // Đầu ra pid
 volatile int pwm = 330;             
@@ -46,7 +46,6 @@ float alpha = 0.37;
 float al;
 int32_t motor_speed = 0.0;
 
-//int32_t motor_speed; 
 volatile int dem = 12; // giá trị giữa cho servo
 volatile int demInterrupt = 0;
 
@@ -73,19 +72,19 @@ void setup() {
   // reset thanh ghi
   TCCR1A = 0;
   TCCR1B = 0;
-
+  
   // Fast PWM, TOP = ICR1
   TCCR1A |= (1<<COM1A1) | (1<<COM1B1) | (1<<WGM11);
   TCCR1B |= (1<<WGM13) | (1<<WGM12) | (1<<CS10); // prescaler = 1
 
   OCR1A = 510; // giá trị ban đầu
-  OCR1B = 0;
+  OCR1B = 0; // Đầu ra B (D10) để điều khiển tốc độ động cơ dc
 
   ICR1 = 532; // 799 = 20khz  532 = 30khz
   // Công thức tính TOP = (16,000,000/(prescaler * tần số mong muốn)) - 1
   // Công thức tính tần số = 16,000,000/(prescaler * (TOP + 1))
     
-  // Sử dụng Timer 2 để tạo xung pwm cho servo 
+  // Sử dụng Timer 2 để tạo xung pwm cho servo(độ phân giải thấp)
   TCCR2A = 0;
   TCCR2B = 0;
   // Chế độ Phase-Correct PWM, TOP = OCR2A
@@ -108,7 +107,7 @@ void setup() {
   pinMode(pwmDCMotor, OUTPUT);
   pinMode(encA, INPUT);
   pinMode(encB, INPUT);
-  pinMode(13, OUTPUT);
+  pinMode(13, OUTPUT); // báo hiệu đã sẵn sàng
 
   //Thiết lập ngắt   
   attachInterrupt(digitalPinToInterrupt(encA), ai0, RISING);                      
@@ -151,7 +150,7 @@ void setup() {
 
   if(count == 700) sta = true;
   delay(4); 
-  }/*
+  }/* bỏ chú thích nếu muốn tính lỗi gia tốc 
   // hãy đặt MPU6050 nằm ngang với mặt bàn để lấy giá trị đúng!
   if (sta) {
     for (int f=0; f < 700; f++) {
@@ -171,7 +170,7 @@ void setup() {
   }
   accX_offset = accX_sum / 700;
   accY_offset = accY_sum / 700;*/
-  GyZ_offset = GyZ_offset_sum / 700;
+  GyZ_offset = GyZ_offset_sum / 700; // lấy giá trị trung bình
 
   digitalWrite(13, HIGH);
   delay(150);
@@ -192,25 +191,26 @@ void loop() {
   stTimer = micros();
   if(stTimer - lastTimer >= loop_timer) {
   dt = (float)(loop_timer / 1.0e6);
-  noInterrupts();
+  noInterrupts();  
   countInterrupt = demInterrupt;
   interrupts();
-
+  // Có thể thay thế bằng thư viện atomic
   // Tính RPM
   //float angular_velocity_Filter = alpha * angular_velocity + (1 - alpha) * angular_velocity_Filter;
   float vci = (countInterrupt - prevCount) / dt;
   prevCount = countInterrupt;
   float rpm = (float)(vci/PPR)*60.0;// Tính RPM
   // Tính vận tốc góc
-  float angular_velocity = (float)(2 * PI * rpm) / 60;// đơn vị radian/s
+  float angular_velocity = (float)(2 * PI * rpm) / 60;// đơn vị radian/s 
   //float angular_velocity_rad_to_deg = angular_velocity * 180 / PI;// đơn vị độ/s
+  // Tunning
   DKH();         
   angleMPU();      
   if(exe) 
   {            
     digitalWrite(activate, HIGH); // Kích hoạt động cơ
 
-    //angleFilt = alpha * Angle + (1-alpha) * angleFilt;
+    //angleFilt = alpha * Angle + (1-alpha) * angleFilt; // nếu sử dụng sẽ phải điều chỉnh lại pid
 
     error = setpoint - tcb - Angle;
 
@@ -220,15 +220,10 @@ void loop() {
     derivative = (error - prev_error) / dt;       
   
     pid_output = constrain(Kp * error + Kd * derivative + Ki * integral + f * motor_speed, -510, 510);
-    motor_speed += angular_velocity;
+    motor_speed += angular_velocity; 
     prev_error = error;
 
-    if(pid_output < 8 && pid_output > -8)pid_output = 0;
-  
-    /*if(setpoint == 0) {
-      if(pid_output < 0) tcb += gcb;
-      if(pid_output > 0) tcb -= gcb;
-    }*/
+    if(pid_output < 8 && pid_output > -8)pid_output = 0; // dead-band để giảm nhiễu dao động
 
     if(pid_output < 0) {
       tcb += gcb;
@@ -241,9 +236,6 @@ void loop() {
       {tcb = -3;}
     }
     Motor_control(pid_output);
-    //Serial.print(setpoint);
-    //Serial.print(",");
-    //Serial.println(Angle);
                                    
   }else {
     pid_output = 0;
@@ -345,9 +337,9 @@ void DKH() { // Điều Khiển Hướng
     (stTimer - prevTimer >= 1e5) ? dem--,prevTimer = stTimer : dem = dem;
   }
 
-  dem = constrain(dem, 4, 20);
+  dem = constrain(dem, 4, 20); 
 
-  OCR2B = dem;
+  OCR2B = dem; 
 }
 void angleMPU() { // Tính toán góc
   
@@ -367,8 +359,7 @@ void angleMPU() { // Tính toán góc
      
   gyroZ = (Wire.read() << 8 | Wire.read()) / 65.5;
 
-  // Bị trễ giư liệu góc là do viết như này AcX -= accX_offset; AcY -= accY_offset;
-  // loop_timer có ảnh hưởng đến độ trễ góc
+  // Bị trễ giư liệu góc là do viết như này accX -= accX_offset; accY -= accY_offset;
   
   accX -= 1730;//1730
   accY -= -394;//-394
@@ -376,9 +367,9 @@ void angleMPU() { // Tính toán góc
     
   Angle += gyroZ * dt;
 
-  angle_accX = atan2(accY, -accX) * 180 / PI; // Tính góc gia tốc
+  angle_accX = atan2(accY, -accX) * 180 / PI; // Tính góc gia tốc 
 
-  Angle = Angle * 0.996 + angle_accX * 0.004; // Kết hợp data gyro và accel
+  Angle = Angle * 0.996 + angle_accX * 0.004; // Kết hợp data gyro và accel để không bị trôi
 
   if (!goc_2) {
     if (Angle > 0.3 || Angle < -0.3) {
@@ -387,7 +378,7 @@ void angleMPU() { // Tính toán góc
       goc_2 = false;
     }
   }
-  if (abs(Angle) < 0.3 && goc_2) exe = true;   
+  if (abs(Angle) < 0.3 && goc_2) exe = true;  // biến kích hoạt pid 
   if (abs(Angle) > 15) exe = false;
   //Serial.println(Angle);        
 }
