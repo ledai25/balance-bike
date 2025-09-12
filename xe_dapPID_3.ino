@@ -141,12 +141,12 @@ void setup() {
   count++; 
   Wire.beginTransmission(MPU6050);                                        
   Wire.write(0x47);                                                       
-  Wire.endTransmission();                                                        
-  Wire.requestFrom(0x68, 2, true); 
+  Wire.endTransmission(false);                                                        
+  Wire.requestFrom(MPU6050, 2, true); 
                
   gyro_errorZ = Wire.read() << 8 | Wire.read();       //Kết hợp hai byte để tạo thành một số nguyên
 
-  GyZ_offset_sum += (gyro_errorZ / 65.5);
+  GyZ_offset_sum += gyro_errorZ;
 
   if(count == 700) sta = true;
   delay(4); 
@@ -209,16 +209,10 @@ void loop() {
   if(exe) 
   {            
     digitalWrite(activate, HIGH); // Kích hoạt động cơ
-
-    //angleFilt = alpha * Angle + (1-alpha) * angleFilt; // nếu sử dụng sẽ phải điều chỉnh lại pid
-
     error = setpoint - tcb - Angle;
-
     integral += error * dt;
     //integral = constrain(integral, -60, 60);
-  
-    derivative = (error - prev_error) / dt;       
-  
+    derivative = (error - prev_error) / dt;     
     pid_output = constrain(Kp * error + Kd * derivative + Ki * integral + f * motor_speed, -510, 510);
     motor_speed += angular_velocity; 
     prev_error = error;
@@ -250,27 +244,27 @@ void loop() {
   }  
 }
 
-void Motor_control(int pwm) {
-  if (pwm <= 0) {
+void Motor_control(int pwm_bldc) {
+  if (pwm_bldc <= 0) {
     digitalWrite(cw_ccw, LOW);  
-    pwm = abs(pwm);       
+    pwm_bldc = abs(pwm_bldc);       
   } else {
     digitalWrite(cw_ccw, HIGH);  
   }
-  OCR1A = map(pwm, 0, 510, 510, 0);
+  OCR1A = map(pwm_bldc, 0, 510, 510, 0);
 }
 
 void stop() {
   digitalWrite(dir, LOW);
   OCR1B = 0;
 }
-void phiatruoc(volatile int pwm) {
+void phiatruoc(volatile int pwm_motor) {
   digitalWrite(dir, HIGH);
-  OCR1B = pwm; 
+  OCR1B = pwm_motor; 
 }
-void  phiasau(volatile int pwm) {
+void  phiasau(volatile int pwm_motor) {
   digitalWrite(dir, LOW);
-  OCR1B = pwm;
+  OCR1B = pwm_motor;
 }
 
 void DKH() { // Điều Khiển Hướng
@@ -331,45 +325,42 @@ void DKH() { // Điều Khiển Hướng
   }
 
   if (l == 1) {
-    (stTimer - prevTimer >= 1e5) ? dem++,prevTimer = stTimer : dem = dem;
+    (stTimer - prevTimer >= 1e5) ? dem++,prevTimer = stTimer : dem;
   }
   if (r == 1) {
-    (stTimer - prevTimer >= 1e5) ? dem--,prevTimer = stTimer : dem = dem;
+    (stTimer - prevTimer >= 1e5) ? dem--,prevTimer = stTimer : dem;
   }
 
-  dem = constrain(dem, 4, 20); 
+  dem = constrain(dem, 4, 20); // 0 đến 180deg
 
   OCR2B = dem; 
 }
-void angleMPU() { // Tính toán góc
-  
+void angleMPU() { // Tính toán góc 
   Wire.beginTransmission(MPU6050);
   Wire.write(0x3B);                  
   Wire.endTransmission(false);
-  Wire.requestFrom(MPU6050, 6, true);
+  Wire.requestFrom(MPU6050, 14, true);
     
   accX = Wire.read() << 8 | Wire.read();
   accY = Wire.read() << 8 | Wire.read();
   accZ = Wire.read() << 8 | Wire.read();
-    
-  Wire.beginTransmission(MPU6050);
-  Wire.write(0x47);
-  Wire.endTransmission(false);
-  Wire.requestFrom(MPU6050, 2, true); 
-     
-  gyroZ = (Wire.read() << 8 | Wire.read()) / 65.5;
-
-  // Bị trễ giư liệu góc là do viết như này accX -= accX_offset; accY -= accY_offset;
+  Wire.read();
+  Wire.read();
+  Wire.read();
+  Wire.read();
+  Wire.read();
+  Wire.read();    
+  gyroZ = Wire.read() << 8 | Wire.read();
   
-  accX -= 1730;//1730
-  accY -= -394;//-394
+  accX -= 1730;
+  accY -= -982;
   gyroZ -= GyZ_offset;
     
-  Angle += gyroZ * dt;
+  Angle += (gyroZ / 65.5) * dt;
 
   angle_accX = atan2(accY, -accX) * 180 / PI; // Tính góc gia tốc 
 
-  Angle = Angle * 0.996 + angle_accX * 0.004; // Kết hợp data gyro và accel để không bị trôi
+  Angle = Angle * 0.996 + angle_accX * 0.004;
 
   if (!goc_2) {
     if (Angle > 0.3 || Angle < -0.3) {
@@ -379,7 +370,7 @@ void angleMPU() { // Tính toán góc
     }
   }
   if (abs(Angle) < 0.3 && goc_2) exe = true;  // biến kích hoạt pid 
-  if (abs(Angle) > 15) exe = false;
+  if (abs(Angle) > 17) exe = false;
   //Serial.println(Angle);        
 }
 void ai0() {
